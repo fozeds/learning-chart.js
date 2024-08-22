@@ -1,0 +1,246 @@
+{% set unique_id = chart_id | replace('.', '_') %}
+<canvas id="{{ unique_id }}" width="400" height="200"></canvas>
+<script>
+    let visibleDatasets_{{ unique_id }} = [];
+
+    const ctx_{{ unique_id }} = document.getElementById('{{ unique_id }}').getContext('2d');
+    const data_{{ unique_id }} = {
+        labels: {{ labels|tojson }},
+        datasets: [
+            {% for dataset in datasets %}
+            {
+                label: '{{ dataset.label }}',
+                data: {{ dataset.data|tojson }},
+                borderColor: '{{ dataset.borderColor }}',
+                borderWidth: {{ dataset.borderWidth }},
+                fill: {{ dataset.fill|default(false) }},
+                backgroundColor: '{{ dataset.backgroundColor|default("rgba(0,0,0,0)") }}',
+                tension: {{ dataset.tension|default(0.2) }},
+                hidden: true,
+                borderDash: {{ dataset.borderDash }},
+            }
+            {% if not loop.last %},{% endif %}
+            {% endfor %}
+        ]
+    };
+
+    const config_{{ unique_id }} = {
+        type: '{{ chart_type|default("line") }}',
+        data: data_{{ unique_id }},
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    display: true,
+                    title: {
+                        display: true,
+                        text: '{{ x_axis_title|default("Data") }}',
+                        font: {
+                            size: 14,
+                            family: 'Times New Roman',
+                            weight: 'bold'
+                        },
+                        color: 'black',
+                        className: 'chart-axis'
+                    },
+                    ticks: {
+                        color: 'black',
+                        font: {
+                            family: 'Times New Roman',
+                            weight: 'bold'
+                        },
+                        className: 'chart-axis'
+                    }
+                },
+                y: {
+                    display: true,
+                    title: {
+                        display: true,
+                        text: '{{ y_axis_title|default("Valor") }}',
+                        font: {
+                            size: 14,
+                            family: 'Times New Roman',
+                            weight: 'bold'
+                        },
+                        color: 'black',
+                        className: 'chart-axis'
+                    },
+                    ticks: {
+                        color: 'black',
+                        font: {
+                            family: 'Times New Roman',
+                            weight: 'bold'
+                        },
+                        className: 'chart-axis'
+                    }
+                }
+            },
+            plugins: {
+                title: {
+                    display: true,
+                    text: '{{ chart_title|default("Meu Gráfico") }}',
+                    font: {
+                        size: 18,
+                        family: 'Times New Roman',
+                        weight: 'bold'
+                    },
+                    color: 'black',
+                    className: 'chart-title'
+                },
+                    subtitle: {
+                        display: true,
+                        text: 'Representação visual de desempenho do titulo \'{{ chart_title }}\' em relação a um indexador para cada plano.',
+                        fullSize: false,
+                        position: 'bottom',
+                        font: {
+                            size: 14,
+                            family: 'Times New Roman',
+                            style: 'italic'
+                        },
+                    color: 'black',
+                    className: 'chart-title'
+                    },
+                legend: {
+                    display: true,
+                    labels: {
+                        usePointStyle: true,
+                        color: 'black',
+                        font: {
+                            family: 'Times New Roman',
+                            weight: 'bold'
+                        },
+                        className: 'chart-label',
+                        generateLabels: function(chart) {
+                            const original = Chart.defaults.plugins.legend.labels.generateLabels;
+                            const labelsOriginal = original.call(this, chart);
+
+                            labelsOriginal.forEach(label => {
+                                const index = label.datasetIndex;
+                                const dataset = chart.data.datasets[index];
+                                const meta = chart.getDatasetMeta(index);
+                                const style = meta.controller.getStyle();
+
+                                label.lineDash = style.borderDash;
+                                label.lineWidth = style.borderWidth;
+                                label.strokeStyle = style.borderColor;
+
+                                if (visibleDatasets_{{ unique_id }}.includes(index)) {
+                                    label.fillStyle = 'white';
+                                } else {
+                                    label.fillStyle = 'gray';
+                                }
+                            });
+
+                            return labelsOriginal;
+                        }
+                    },
+                    onClick: function(e, legendItem, legend) {
+                        const index = legendItem.datasetIndex;
+                        const ci = legend.chart;
+                        const isVisible = ci.isDatasetVisible(index);
+
+                        ci.setDatasetVisibility(index, !isVisible);
+                        ci.update();
+
+                        if (isVisible) {
+                            visibleDatasets_{{ unique_id }} = visibleDatasets_{{ unique_id }}.filter(idx => idx !== index);
+                        } else {
+                            visibleDatasets_{{ unique_id }}.push(index);
+                        }
+
+                        legend.legendItems[index].fillStyle = isVisible ? 'gray' : 'white';
+                        ci.legend.update();
+                    }
+                }
+            }
+        },
+        plugins: [{
+            id: 'removeStrikethrough',
+            afterUpdate: function(chart) {
+                const originalFillText = chart.ctx.fillText;
+                chart.ctx.fillText = function(text, x, y, maxWidth) {
+                    originalFillText.apply(this, arguments);
+                    this.fillStyle = "rgba(0,0,0,0)";
+                };
+            }
+        }, {
+            id: 'dataLabels',
+            afterDatasetsDraw: function(chart) {
+                if (window.$printing) return; // Se estiver imprimindo, não desenha os dataLabels
+        
+                const ctx = chart.ctx;
+                chart.data.datasets.forEach((dataset, i) => {
+                    const meta = chart.getDatasetMeta(i);
+                    if (!chart.isDatasetVisible(i)) return;
+        
+                    meta.data.forEach((element, index) => {
+                        ctx.fillStyle = 'black';
+                        const fontSize = 12;
+                        const fontStyle = 'normal';
+                        const fontFamily = 'Times New Roman';
+                        ctx.font = Chart.helpers.fontString(fontSize, fontStyle, fontFamily);
+        
+                        const dataString = dataset.data[index].toFixed(2).toString();
+        
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+        
+                        const padding = 5;
+                        const position = element.tooltipPosition();
+                        ctx.fillText(dataString, position.x, position.y - (fontSize / 2) - padding);
+                    });
+                });
+            }
+        }, {
+            id: 'gridLinesControl',
+            afterUpdate: function(chart) {
+                if (window.$printing) {
+                    chart.options.scales.x.grid.display = false;
+                    chart.options.scales.y.grid.display = false;
+                } else {
+                    chart.options.scales.x.grid.display = true;
+                    chart.options.scales.y.grid.display = true;
+                }
+            }
+        }]
+    };
+
+    mychart_{{ unique_id }} = new Chart(ctx_{{ unique_id }}, config_{{ unique_id }});
+    
+
+    window.addEventListener('beforeprint', () => {
+        window.$printing = true;
+
+        // oculta a labels que não estão selecionadas
+        mychart_{{ unique_id }}.update('none');
+
+                // Verifica se algum dataset está visível
+        const allDatasetsHidden = mychart_{{ unique_id }}.data.datasets.every((dataset, index) => {
+            return !mychart_{{ unique_id }}.isDatasetVisible(index);
+        });
+
+        if (allDatasetsHidden) {
+            // Oculta o canvas se todos os datasets estiverem invisíveis
+            document.getElementById('{{ unique_id }}').style.display = 'none';
+        } else {
+            // Caso contrário, mantenha o canvas visível
+            document.getElementById('{{ unique_id }}').style.display = 'block';
+        }
+    });
+    
+    window.addEventListener('afterprint', () => {
+        window.$printing = false;
+        mychart_{{ unique_id }}.update('none');
+
+        // Retorna o canvas ao estado normal após a impressão
+        document.getElementById('{{ unique_id }}').style.display = 'block';
+        mychart_{{ unique_id }}.update('none');
+    });
+
+    mychart_{{ unique_id }}.options.plugins.legend.labels.filter = function({hidden}) {
+        return !(hidden && window.$printing);
+    };
+
+    mychart_{{ unique_id }}.update();
+</script>
